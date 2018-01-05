@@ -10,6 +10,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.io.OpenDialog;
+import ij.measure.Calibration;
 import ij.plugin.PlugIn;
 import ij.process.ShortProcessor;
 
@@ -90,6 +91,8 @@ public class Read_VGI implements PlugIn
 		int bitDepth = 0;
 		boolean littleEndian = true;
 		
+		Calibration calib = null;
+		
 		try (LineNumberReader reader = new LineNumberReader(new FileReader(file))) 
 		{ 
 			String line;
@@ -101,8 +104,8 @@ public class Read_VGI implements PlugIn
 				if (line.startsWith("{") && line.endsWith("}"))
 				{
 					// Process new volume
-					//				String volumeName = line.substring(1, line.length()-1);
-					//				System.out.println("New volume: " + volumeName);
+//					String volumeName = line.substring(1, line.length()-1);
+//					System.out.println("New volume: " + volumeName);
 				}
 				else if (line.startsWith("[") && line.endsWith("]"))
 				{
@@ -121,11 +124,14 @@ public class Read_VGI implements PlugIn
 						continue;
 					}
 
+					// extract the key and the value of the current line
 					String key = tokens[0].trim();
 					String valueString = tokens[1].trim();
 
+					// switch for the known key names
 					if ("size".equalsIgnoreCase(key))
 					{
+						// the size of the data set, as the number of voxels in each direction
 						tokens = valueString.split(" ");
 						if (tokens.length != 3)
 						{
@@ -139,6 +145,8 @@ public class Read_VGI implements PlugIn
 					}
 					else if ("bitsperelement".equalsIgnoreCase(key))
 					{
+						// number of bits per element
+						// (TODO: extend to more)
 						bitDepth = Integer.parseInt(valueString);
 						if (bitDepth != 16)
 						{
@@ -147,24 +155,59 @@ public class Read_VGI implements PlugIn
 					}
 					else if ("name".equalsIgnoreCase(key))
 					{
+						// read the name of the data file
 						if (dataFileName == null)
 						{
 							System.out.println("data file name: "  + valueString);
 							dataFileName = valueString;
 						}
 					}
+					else if ("resolution".equalsIgnoreCase(key))
+					{
+						// read spatial calibration of voxel
+						tokens = valueString.split(" ");
+						if (tokens.length != 3)
+						{
+							IJ.log("Could not parse spatial resolution from line:" + line);
+							continue;
+						}
+						
+						if (calib == null)
+						{
+							calib = new Calibration();
+						}
+						calib.pixelWidth  = Double.parseDouble(tokens[0]);
+						calib.pixelHeight = Double.parseDouble(tokens[1]);
+						calib.pixelDepth  = Double.parseDouble(tokens[2]);
+					}
+					else if ("unit".equalsIgnoreCase(key))
+					{
+						// read unit of spatial calibration
+						if (calib == null)
+						{
+							calib = new Calibration();
+						}
+						calib.setUnit(valueString);
+					}
 				}
 			}
 			reader.close();
 		};
 
-		// assumes all necessary information have been read
+		
+		// read image data
+		// (assumes all necessary information have been read)
 		File dataFile = new File(dataFileName);
 		dataFile = new File(file.getParentFile(), dataFile.getName());
-		System.out.println("read data file: " + dataFile.getAbsolutePath());
+		IJ.log("read data file: " + dataFile.getAbsolutePath());
 		ImageStack stack = readData(dataFile, sizeX, sizeY, sizeZ, 16, littleEndian);
 		
-		return new ImagePlus(file.getName(), stack);
+		ImagePlus imagePlus = new ImagePlus(file.getName(), stack);
+		if (calib != null)
+		{
+			imagePlus.setCalibration(calib);
+		}
+		return imagePlus;
 	}
 	
 	private ImageStack readData(File file, int sizeX, int sizeY, int sizeZ, int bitDepth, boolean littleEndian) throws IOException
