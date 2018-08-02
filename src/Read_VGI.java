@@ -93,7 +93,8 @@ public class Read_VGI implements PlugIn
 		
 		Calibration calib = null;
 		
-		try (LineNumberReader reader = new LineNumberReader(new FileReader(file))) 
+		LineNumberReader reader = new LineNumberReader(new FileReader(file));
+		try  
 		{ 
 			String line;
 			while ((line = reader.readLine()) != null)
@@ -191,8 +192,11 @@ public class Read_VGI implements PlugIn
 					}
 				}
 			}
+		}
+		finally
+		{
 			reader.close();
-		};
+		}
 
 		
 		// read image data
@@ -229,33 +233,32 @@ public class Read_VGI implements PlugIn
 		int nBytes = pixelsPerPlane * 2;
 		byte[] byteData = new byte[nBytes];
 		
-		try (InputStream inputStream = new BufferedInputStream(new FileInputStream(file)))
+		InputStream inputStream = new BufferedInputStream(new FileInputStream(file));
+		// iterate over slices
+		for (int z = 0; z < sizeZ; z++)
 		{
-			// iterate over slices
-			for (int z = 0; z < sizeZ; z++)
+			IJ.showProgress(z, sizeZ);
+			// read current slice
+			int nRead = inputStream.read(byteData, 0, nBytes);
+
+			// check whole slice was correctly read
+			if (nRead != nBytes)
 			{
-				IJ.showProgress(z, sizeZ);
-				// read current slice
-				int nRead = inputStream.read(byteData, 0, nBytes);
-				
-				// check whole slice was correctly read
-				if (nRead != nBytes)
-				{
-					throw new RuntimeException("Could read only " + nRead + " over the " + nBytes + " expected");
-				}
-				
-				// convert byte array to ShortProcessor
-				short[] data = convertToShortArray(byteData, littleEndian);
-				ShortProcessor slice = new ShortProcessor(sizeX, sizeY, data, null);
-				
-				stack.setProcessor(slice, z+1);
+				inputStream.close();
+				throw new RuntimeException("Could read only " + nRead + " over the " + nBytes + " expected");
 			}
 
-			inputStream.close();
+			// convert byte array to ShortProcessor
+			short[] data = convertToShortArray(byteData, littleEndian);
+			ShortProcessor slice = new ShortProcessor(sizeX, sizeY, data, null);
 
-			IJ.showProgress(1, 1);
-			IJ.showStatus("");
+			stack.setProcessor(slice, z+1);
 		}
+
+		inputStream.close();
+
+		IJ.showProgress(1, 1);
+		IJ.showStatus("");
 
 		return stack;
 	}
